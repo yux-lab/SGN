@@ -15,6 +15,7 @@ CTRL + F ：modified by
 `mmcv.dump(outputs['bbox_results'], args.out)` -> `mmcv.dump(outputs, args.out)`
 
 
+## kitti api 可视化
 follow: [GitHub - PRBonn/semantic-kitti-api: SemanticKITTI API for visualizing dataset, processing data, and evaluating results.](https://github.com/PRBonn/semantic-kitti-api?tab=readme-ov-file)
 
 ### conda 换源 
