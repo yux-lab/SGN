@@ -25,7 +25,8 @@ class SGNHeadOcc(nn.Module):
         nbr_classes=2,
         point_cloud_range,
         spatial_shape,
-        save_flag=False,
+        #modified by Yux
+        save_flag=True,
         guidance=False,
         **kwargs
     ):

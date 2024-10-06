@@ -1,4 +1,5 @@
-work_dir = ''
+#modified by Yux
+work_dir = 'result/sgn-T'
 _base_ = [
     '../_base_/default_runtime.py'
 ]
@@ -18,6 +19,7 @@ _depthmodel_= 'msnet3d'
 
 model = dict(
    type='SGN',
+   #modified by Yux
    pretrained=dict(img='ckpts/resnet50-19c8e357.pth'),
    img_backbone=dict(
        type='ResNet',

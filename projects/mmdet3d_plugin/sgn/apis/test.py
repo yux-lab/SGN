@@ -50,41 +50,82 @@ def custom_single_gpu_test(model, data_loader, show=False, out_dir=None):
     return res
 
 
+# def custom_multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
+#     """Test model with multiple gpus.
+#     This method tests model with multiple gpus and collects the results
+#     under two different modes: gpu and cpu modes. By setting 'gpu_collect=True'
+#     it encodes results to gpu tensors and use gpu communication for results
+#     collection. On cpu mode it saves the results on different gpus to 'tmpdir'
+#     and collects them by the rank 0 worker.
+#     Args:
+#         model (nn.Module): Model to be tested.
+#         data_loader (nn.Dataloader): Pytorch data loader.
+#         tmpdir (str): Path of directory to save the temporary results from
+#             different gpus under cpu mode.
+#         gpu_collect (bool): Option to use either gpu or cpu to collect results.
+#     Returns:
+#         list: The prediction results.
+#     """
+#
+#     model.eval()
+#     dataset = data_loader.dataset
+#     rank, world_size = get_dist_info()
+#     if rank == 0:
+#         prog_bar = mmcv.ProgressBar(len(dataset))
+#
+#     ssc_results = []
+#     # evaluate ssc
+#     ssc_metric = SSCMetrics(len(dataset.class_names)).cuda()
+#
+#     time.sleep(2)  # This line can prevent deadlock problem in some cases.
+#
+#     for i, data in enumerate(data_loader):
+#         with torch.no_grad():
+#             result = model(return_loss=False, rescale=True, **data)
+#
+#         output_voxels = torch.argmax(result['output_voxels'], dim=1)
+#
+#         if result['target_voxels'] is not None:
+#             target_voxels = result['target_voxels'].clone()
+#             ssc_results_i = ssc_metric.compute_single(
+#                 y_pred=output_voxels, y_true=target_voxels)
+#             ssc_results.append(ssc_results_i)
+#
+#         batch_size = output_voxels.shape[0]
+#         if rank == 0:
+#             for _ in range(batch_size * world_size):
+#                 prog_bar.update()
+#
+#     # wait until all predictions are generated
+#     dist.barrier()
+#
+#     res = {}
+#     res['ssc_results'] = collect_results_cpu(ssc_results, len(dataset), tmpdir)
+#
+#     return res
+
+#modified by Yux    
 def custom_multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
-    """Test model with multiple gpus.
-    This method tests model with multiple gpus and collects the results
-    under two different modes: gpu and cpu modes. By setting 'gpu_collect=True'
-    it encodes results to gpu tensors and use gpu communication for results
-    collection. On cpu mode it saves the results on different gpus to 'tmpdir'
-    and collects them by the rank 0 worker.
-    Args:
-        model (nn.Module): Model to be tested.
-        data_loader (nn.Dataloader): Pytorch data loader.
-        tmpdir (str): Path of directory to save the temporary results from
-            different gpus under cpu mode.
-        gpu_collect (bool): Option to use either gpu or cpu to collect results.
-    Returns:
-        list: The prediction results.
-    """
+    """Test model with multiple gpus and save predictions as .label files."""
     
     model.eval()
     dataset = data_loader.dataset
     rank, world_size = get_dist_info()
+    
     if rank == 0:
         prog_bar = mmcv.ProgressBar(len(dataset))
-        
+    
     ssc_results = []
-    # evaluate ssc
     ssc_metric = SSCMetrics(len(dataset.class_names)).cuda()
     
-    time.sleep(2)  # This line can prevent deadlock problem in some cases.
+    time.sleep(2)  # Prevent deadlock
     
     for i, data in enumerate(data_loader):
         with torch.no_grad():
             result = model(return_loss=False, rescale=True, **data)
             
         output_voxels = torch.argmax(result['output_voxels'], dim=1)
-            
+        
         if result['target_voxels'] is not None:
             target_voxels = result['target_voxels'].clone()
             ssc_results_i = ssc_metric.compute_single(
@@ -92,18 +133,41 @@ def custom_multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
             ssc_results.append(ssc_results_i)
             
         batch_size = output_voxels.shape[0]
+        
+        # Save predictions
+        if rank == 0 and tmpdir:
+            img_metas = data['img_metas'].data[0]
+            
+            # Debugging information
+            print("img_metas content:")
+            print(img_metas)
+            
+            for j in range(batch_size):
+                # Find the correct keys for sequence_id and frame_id
+                sequence_id = img_metas[j].get('sequence_id', None)  # Use .get() to avoid KeyError
+                frame_id = img_metas[j].get('frame_id', None)
+                
+                if sequence_id is None or frame_id is None:
+                    print(f"Warning: Missing sequence_id or frame_id for batch index {j}")
+                    continue
+                
+                pred_folder = os.path.join(tmpdir, "sequences", sequence_id, "predictions")
+                if not os.path.exists(pred_folder):
+                    os.makedirs(pred_folder)
+                
+                y_pred_bin = output_voxels[j].cpu().numpy().astype(np.uint16)
+                y_pred_bin.tofile(os.path.join(pred_folder, frame_id + ".label"))
+        
         if rank == 0:
             for _ in range(batch_size * world_size):
                 prog_bar.update()
     
-    # wait until all predictions are generated
     dist.barrier()
     
     res = {}
     res['ssc_results'] = collect_results_cpu(ssc_results, len(dataset), tmpdir)
     
     return res
-
 
 def collect_results_cpu(result_part, size, tmpdir=None):
     rank, world_size = get_dist_info()
